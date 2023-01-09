@@ -2,47 +2,85 @@
 #####################################################
 ##' bootstrap.estimates
 ##'
-##' this function contains the core of the rescaled bootstrap
-##' method for estimating uncertainty in our estimates
-##' it should be designed so that it can be passed in to
-##' estimation functions as an argument\cr
-##' OR\cr
-##' \cr
-##' @section TODO:
-##' \itemize{
-##'   \item{estimator.fn/bootstrap.fn and summary.fn are treated differently
-##'         (one expects characters, one expects an actual fn. fix!)}
-##'   \item{write description block, including estimator.fn, bootstrap.fn,
-##'         summary.fn, more?}
-##'}
+##' Use a given bootstrap method to estimate sampling uncertainty from a given
+##' estimator.
 ##'
-##' @param survey.data the dataset to use
-##' @param survey.design a formula describing the design of the survey
-##'                      (see below - TODO)
-##' @param estimator.fn name of a function which, given a dataset like
-##'                     survey data and arguments in \code{...},
+##' @param survey.data The dataset to use
+##' @param survey.design A formula describing the design of the survey
+##'                      (see Details below)
+##' @param estimator.fn The name of a function which, given a dataset like
+##'                     `survey.data` and arguments in `...`,
 ##'                     will produce an estimate of interest
-##' @param bootstrap.fn name of the method to be used to take
-##'                     bootstrap resamples; see below
-##' @param num.reps the number of bootstrap replication samples to draw
-##' @param weights weights to use in estimation (or NULL, if none)
-##' @param summary.fn (optional) name of a function which, given the set of estimates
-##'                   produced by estimator.fn, summarizes them. if not specified, all of
-##'                   the estimates are returned in a list
-##' @param parallel if TRUE, use the plyr library's .parallel argument to
+##' @param bootstrap.fn Name of the method to be used to take
+##'                     bootstrap resamples
+##' @param num.reps The number of bootstrap replication samples to draw
+##' @param weights Weights to use in estimation (or `NULL`, if none)
+##' @param summary.fn (Optional) Name of a function which, given the set of estimates
+##'                   produced by `estimator.fn`, summarizes them. If not specified, all of
+##'                   the estimates are returned in a list.
+##' @param parallel If `TRUE`, use the `plyr` library's `.parallel` argument to
 ##'                 produce bootstrap resamples and estimates in parallel
-##' @param paropts if not NULL, additional arguments to pass along to the
+##' @param paropts If not `NULL`, additional arguments to pass along to the
 ##'                parallelization routine
-##' @param verbose if TRUE, produce lots of feedback about what is going on
-##' @param ... additional arguments which will be passed on to the estimator fn
-##' @return if no summary.fn is specified, then return the list of estimates
-##'         produced by estimator.fn; if summary.fn is specified, then return
+##' @param verbose If `TRUE`, produce lots of feedback about what is going on
+##' @param ... additional arguments which will be passed on to `estimator.fn`
+##' @return If `summary.fn` is not specified, then return the list of estimates
+##'         produced by `estimator.fn`; if `summary.fn` is specified, then return
 ##'         its output
+##'
+##' @details
+##' The formula describing the survey design should have the form
+##' `~ psu_v1 + psu_v2 + ... + strata(strata_v1 + strata_v2 + ...)`,
+##' where `psu_v1, ...` are the variables identifying primary sampling units (PSUs)
+##' and `strata_v1, ...` identifies the strata
+##'
 ##' @export
 ##' @examples
-##' \donttest{
-##' # code goes here
-##' 
+##'
+##' # example using a simple random sample
+##'
+##' survey <- MU284.surveys[[1]]
+##'
+##' estimator <- function(survey.data, weights) {
+##'   plyr::summarise(survey.data,
+##'                   T82.hat = sum(S82 * weights))
+##' }
+##'
+##' ex.mu284 <- bootstrap.estimates(
+##'    survey.design = ~1,
+##'    num.reps = 10,
+##'    estimator.fn = estimator,
+##'    weights='sample_weight',
+##'    bootstrap.fn = 'srs.bootstrap.sample',
+##'    survey.data=survey)
+##'
+##' \dontrun{
+##' idu.est <- bootstrap.estimates(
+##'   ## this describes the sampling design of the
+##'   ## survey; here, the PSUs are given by the
+##'   ## variable cluster, and the strata are given
+##'   ## by the variable region
+##'   survey.design = ~ cluster + strata(region),
+##'   ## the number of bootstrap resamples to obtain
+##'   num.reps=1000,
+##'   ## this is the name of the function
+##'   ## we want to use to produce an estimate
+##'   ## from each bootstrapped dataset
+##'   estimator.fn="our.estimator",
+##'   ## these are the sampling weights
+##'   weights="indweight",
+##'   ## this is the name of the type of bootstrap
+##'   ## we wish to use
+##'   bootstrap.fn="rescaled.bootstrap.sample",
+##'   ## our dataset
+##'   survey.data=example.survey,
+##'   ## other parameters we need to pass
+##'   ## to the estimator function
+##'   d.hat.vals=d.hat,
+##'   total.popn.size=tot.pop.size,
+##'   y.vals="clients",
+##'   missing="complete.obs")
+##'
 ##' }
 bootstrap.estimates <- function(survey.data,
                                 survey.design,
@@ -56,6 +94,12 @@ bootstrap.estimates <- function(survey.data,
                                 parallel=FALSE,
                                 paropts=NULL)
 {
+
+  ## Wishlist / TODO
+  ## * estimator.fn/bootstrap.fn and summary.fn are treated differently
+  ##         (one expects characters, one expects an actual fn. fix!)
+  ## * write description block, including estimator.fn, bootstrap.fn,
+  ##         summary.fn, more?
 
   ## get the weights
   weights <- get.weights(survey.data, weights)
@@ -72,7 +116,7 @@ bootstrap.estimates <- function(survey.data,
                         names(boot.call),
                         0L)
   boot.call <- boot.call[c(1,boot.arg.idx)]
-  
+
   boot.call[[1]] <- get.fn(bootstrap.fn)
 
   ## also build up a call to obtain an estimate from the data

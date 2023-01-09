@@ -2,17 +2,30 @@
 #####################################################
 ##' rescaled.bootstrap.sample
 ##'
-##' C++ version: given a survey dataset and a description of the survey
-##' design (ie, which combination of vars determines primary sampling
-##' units, and which combination of vars determines strata), take
+##' Given a survey dataset and a description of the survey
+##' design (ie, which combination of variables determines primary sampling
+##' units, and which combination of variables determines strata), take
 ##' a bunch of bootstrap samples for the rescaled bootstrap estimator
-##' (see, eg, Rust and Rao 1996).
+##' (see Details).
+##'
+##' @details
+##'
+##' `survey.design` is a formula of the form
+##'
+##'    `weight ~ psu_vars + strata(strata_vars)`
+##'
+##' where:
+##'   * `weight` is the variable with the survey weights
+##'   * `psu_vars` has the form `psu_v1 + psu_v2 + ...`, where primary
+##'     sampling units (PSUs) are determined by `psu_v1`, etc
+##'   * `strata_vars` has the form `strata_v1 + strata_v2 + ...`, which
+##'     determine strata
 ##'
 ##' Note that we assume that the formula uniquely specifies PSUs.
 ##' This will always be true if the PSUs were selected without replacement.
 ##' If they were selected with replacement, then it will be necessary
 ##' to make each realization of a given PSU in the sample a unique id.
-##' Bottom line: the code below assumes that all observations within
+##' The code below assumes that all observations within
 ##' each PSU (as identified by the design formula) are from the same draw
 ##' of the PSU.
 ##'
@@ -27,22 +40,37 @@
 ##' We always take m_i = n_i - 1, according to the advice presented
 ##' in Rao and Wu (1988) and Rust and Rao (1996).
 ##'
-##' @param survey.data the dataset to use
-##' @param survey.design a formula describing the design of the survey (see below - TODO)
-##' @param num.reps the number of bootstrap replication samples to draw
-##' @param parallel if TRUE, use parallelization (via \code{plyr})
-##' @param paropts an optional list of arguments passed on to \code{plyr} to control
+##' (This is a C++ version; a previous version, written in pure R,
+##' is called [rescaled.bootstrap.sample.pureR()] )
+##'
+##' References:
+##' * Rust, Keith F., and J. N. K. Rao. "Variance estimation for complex surveys
+##'   using replication techniques." *Statistical methods in medical research*
+##'   5.3 (1996): 283-310.
+##'  * Rao, Jon NK, and C. F. J. Wu. "Resampling inference with complex survey
+##'    data." *Journal of the American Statistical Association*
+##'    83.401 (1988): 231-241.
+##'
+##'
+##' @param survey.data The dataset to use
+##' @param survey.design A formula describing the design of the survey (see Details)
+##' @param num.reps The number of bootstrap replication samples to draw
+##' @param parallel If `TRUE`, use parallelization (via `plyr`)
+##' @param paropts An optional list of arguments passed on to `plyr` to control
 ##'        details of parallelization
-##' @return a list with \code{num.reps} entries. each entry is a dataset which
-##' has at least the variables \code{index} (the row index of the original
-##' dataset that was resampled) and \code{weight.scale}
+##' @return A list with `num.reps` entries. Each entry is a dataset which
+##' has at least the variables `index` (the row index of the original
+##' dataset that was resampled) and `weight.scale`
 ##' (the factor by which to multiply the sampling weights
 ##' in the original dataset).
-##' @details \code{survey.design} is a formula of the form\cr
-##'    weight ~ psu_vars + strata(strata_vars),
-##' where weight is the variable with the survey weights and psu
-##' is the variable denoting the primary sampling unit
 ##' @export
+##' @examples
+##'
+##' survey <- MU284.complex.surveys[[1]]
+##' boot_surveys <- rescaled.bootstrap.sample(survey.data = survey,
+##'                                           survey.design = ~ CL,
+##'                                           num.reps = 2)
+##'
 rescaled.bootstrap.sample <- function(survey.data,
                                       survey.design,
                                       parallel=FALSE,
@@ -65,7 +93,11 @@ rescaled.bootstrap.sample <- function(survey.data,
 
   ## create a single variable with an id number for each PSU
   ## (we need this to use the C++ code, below)
-  survey.data$.cluster_id <- group_indices_(survey.data, .dots=all.vars(psu.vars))
+  #survey.data$.cluster_id <- group_indices_(survey.data, .dots=all.vars(psu.vars))
+  survey.data <- survey.data %>%
+    group_by(!!!psu.vars) %>%
+    mutate(.cluster_id = cur_group_id()) %>%
+    ungroup()
 
   ## if no strata are specified, enclose the entire survey all in
   ## one stratum
@@ -92,7 +124,7 @@ rescaled.bootstrap.sample <- function(survey.data,
                 colnames(res) <- paste0("rep.", 1:ncol(res))
                 res <- cbind("index"=stratum.data$.internal_id,
                              res)
-                
+
                 return(res)
               })
 
@@ -121,8 +153,8 @@ rescaled.bootstrap.sample <- function(survey.data,
 ##' rescaled.bootstrap.sample.pureR
 ##'
 ##' (this is the pure R version; it has been supplanted by
-##'  \code{rescaled.bootstrap.sample}, which is partially written in C++)
-##' 
+##'  `rescaled.bootstrap.sample`, which is partially written in C++)
+##'
 ##' given a survey dataset and a description of the survey
 ##' design (ie, which combination of vars determines primary sampling
 ##' units, and which combination of vars determines strata), take
@@ -151,19 +183,18 @@ rescaled.bootstrap.sample <- function(survey.data,
 ##' @param survey.data the dataset to use
 ##' @param survey.design a formula describing the design of the survey (see below - TODO)
 ##' @param num.reps the number of bootstrap replication samples to draw
-##' @param parallel if TRUE, use parallelization (via \code{plyr})
-##' @param paropts an optional list of arguments passed on to \code{plyr} to control
+##' @param parallel if TRUE, use parallelization (via `plyr`)
+##' @param paropts an optional list of arguments passed on to `plyr` to control
 ##'        details of parallelization
-##' @return a list with \code{num.reps} entries. each entry is a dataset which
-##' has at least the variables \code{index} (the row index of the original
-##' dataset that was resampled) and \code{weight.scale}
+##' @return a list with `num.reps` entries. each entry is a dataset which
+##' has at least the variables `index` (the row index of the original
+##' dataset that was resampled) and `weight.scale`
 ##' (the factor by which to multiply the sampling weights
 ##' in the original dataset).
-##' @details \code{survey.design} is a formula of the form\cr
+##' @details `survey.design` is a formula of the form\cr
 ##'    weight ~ psu_vars + strata(strata_vars),
 ##' where weight is the variable with the survey weights and psu
 ##' is the variable denoting the primary sampling unit
-##' @export
 rescaled.bootstrap.sample.pureR <- function(survey.data,
                                       survey.design,
                                       parallel=FALSE,
@@ -214,8 +245,8 @@ rescaled.bootstrap.sample.pureR <- function(survey.data,
 
                 ## this llply call returns a list, with one entry for each bootstrap rep.
                 ## each list entry has a data frame with the same number of rows as
-                ## stratum.data, 
-                ## and with colums for 
+                ## stratum.data,
+                ## and with colums for
                 ## the survey design variables, the .internal_id,
                 ## r.hi, and weight.scale
                 resamples <- plyr::llply(1:num.reps,
